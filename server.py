@@ -56,8 +56,9 @@ def get_history(lines: int) -> list[dict]:
     entries: list[dict] = []
     for line in proc.stdout.splitlines():
         parsed = parse_journal_line(line)
-        if parsed:
-            entries.append(parsed)
+        if not parsed:
+            continue
+        entries.append(parsed)
     return entries
 
 
