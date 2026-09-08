@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>wcgw · live</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <div class="ambient ambient-a"></div>
+  <div class="ambient ambient-b"></div>
+
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">w</div>
+        <div>
+          <div class="brand-title">wcgw</div>
+          <div class="brand-subtitle">live activity</div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-filter="all">
+          <span class="nav-icon">⌁</span><span>Activity</span><span class="nav-count" id="allCount">0</span>
+        </button>
+        <button class="nav-item" data-filter="shell">
+          <span class="nav-icon">›_</span><span>Shell</span><span class="nav-count" id="shellCount">0</span>
+        </button>
+        <button class="nav-item" data-filter="file">
+          <span class="nav-icon">⌑</span><span>Files</span><span class="nav-count" id="fileCount">0</span>
+        </button>
+        <button class="nav-item" data-filter="tool">
+          <span class="nav-icon">◇</span><span>Other tools</span><span class="nav-count" id="toolCount">0</span>
+        </button>
+      </nav>
+
+      <div class="source-card">
+        <div class="eyebrow">SOURCE</div>
+        <div class="source-name">journald</div>
+        <div class="source-unit" id="sourceUnit">wcgw.service</div>
+        <div class="source-state"><span class="status-dot"></span><span id="serviceState">Checking…</span></div>
+      </div>
+
+      <div class="sidebar-foot">
+        <div class="mini-label">LOCAL ONLY</div>
+        <div>127.0.0.1</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">LIVE OBSERVER</div>
+          <h1>What ChatGPT is doing</h1>
+          <p>Real wcgw tool activity, as it happens.</p>
+        </div>
+        <div class="live-pill" id="livePill"><span class="live-dot"></span><span id="liveLabel">LIVE</span></div>
+      </header>
+
+      <section class="stats">
+        <div class="stat-card stat-wide">
+          <div class="stat-label">LATEST ACTIVITY</div>
+          <div class="stat-value stat-time" id="latestTime">—</div>
+          <div class="stat-detail" id="latestDetail">Waiting for wcgw…</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">LAST HOUR</div>
+          <div class="stat-value" id="hourCount">0</div>
+          <div class="stat-detail">tool actions</div>
+        </div>
+        <div class="stat-card workspace-card">
+          <div class="stat-label">WORKSPACE</div>
+          <div class="stat-value stat-workspace" id="workspace">—</div>
+          <div class="stat-detail">current cwd</div>
+        </div>
+      </section>
+
+      <section class="controls">
+        <label class="search-wrap">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg>
+          <input id="search" type="search" autocomplete="off" placeholder="Search commands, files, output…">
+          <kbd>/</kbd>
+        </label>
+        <button class="control-button" id="pauseButton"><span class="pause-icon">Ⅱ</span><span>Pause</span></button>
+        <button class="control-button" id="collapseButton"><span>↕</span><span>Collapse</span></button>
+      </section>
+
+      <section class="stream-head">
+        <div>
+          <span class="stream-title">Activity stream</span>
+          <span class="stream-subtitle" id="streamSubtitle">loading history</span>
+        </div>
+        <span class="clock" id="clock"></span>
+      </section>
+
+      <section class="timeline" id="timeline" aria-live="polite"></section>
+
+      <div class="empty hidden" id="emptyState">
+        <div class="empty-orb">⌁</div>
+        <h2>No matching activity</h2>
+        <p>Change the filter or search term.</p>
+      </div>
+    </main>
+  </div>
+
+  <template id="actionTemplate">
+    <article class="action-card">
+      <div class="rail"><div class="action-icon"></div><div class="rail-line"></div></div>
+      <div class="action-body">
+        <div class="action-meta">
+          <span class="action-kind"></span>
+          <span class="action-time"></span>
+          <span class="action-live hidden">NEW</span>
+        </div>
+        <div class="action-title"></div>
+        <div class="action-context"></div>
+        <pre class="action-output"><code></code></pre>
+        <button class="expand-button hidden">Show output</button>
+      </div>
+    </article>
+  </template>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>
