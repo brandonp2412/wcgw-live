@@ -32,17 +32,34 @@ def parse_journal_line(line: str) -> dict | None:
     if not isinstance(message, str):
         message = str(message)
 
+    meta = None
+    marker = "WCGW_EVENT "
+    marker_index = message.find(marker)
+    if marker_index >= 0:
+        try:
+            candidate = json.loads(message[marker_index + len(marker) :])
+            if isinstance(candidate, dict) and candidate.get("event") == "log":
+                meta = candidate
+                event_message = candidate.get("message")
+                if isinstance(event_message, str):
+                    message = event_message
+        except json.JSONDecodeError:
+            pass
+
     try:
         timestamp = int(raw.get("__REALTIME_TIMESTAMP", "0")) / 1_000_000
     except (TypeError, ValueError):
         timestamp = time.time()
 
-    return {
+    entry = {
         "ts": timestamp,
         "message": message,
         "pid": raw.get("_PID"),
         "identifier": raw.get("SYSLOG_IDENTIFIER") or raw.get("_COMM") or "wcgw",
     }
+    if meta is not None:
+        entry["meta"] = meta
+    return entry
 
 
 def get_history(lines: int) -> list[dict]:

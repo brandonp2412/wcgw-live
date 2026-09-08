@@ -6,8 +6,11 @@ A small local web viewer for live `wcgw` activity. It reads a user-level systemd
 
 - Live journald stream over Server-Sent Events
 - Recent activity history
+- Task-aware grouping using structured WCGW thread/task metadata
+- Concurrent chats stay separated by WCGW thread ID
+- Older unstructured journal history is shown as explicitly inferred legacy groups
 - Shell, file, and tool filters
-- Search across commands, paths, and output
+- Search across tasks, commands, paths, and output
 - Pause/resume and compact views
 - No external Python dependencies
 

@@ -4,6 +4,7 @@ const $$ = (selector) => [...document.querySelectorAll(selector)];
 const state = {
   actions: [],
   current: null,
+  currentByThread: new Map(),
   filter: "all",
   search: "",
   paused: false,
@@ -48,7 +49,7 @@ function prettyTool(toolName) {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function createAction(ts, kind, title, tool = "") {
+function createAction(ts, kind, title, tool = "", meta = null) {
   const action = {
     id: `${ts}-${Math.random().toString(16).slice(2)}`,
     ts,
@@ -56,14 +57,23 @@ function createAction(ts, kind, title, tool = "") {
     title,
     tool,
     output: "",
-    cwd: "",
+    cwd: meta?.cwd || "",
+    workspace: meta?.workspace || "",
+    task: meta?.task || "",
+    threadId: meta?.thread_id || "",
     status: "",
     live: false,
   };
   state.actions.push(action);
   state.current = action;
+  if (action.threadId) state.currentByThread.set(action.threadId, action);
   if (state.actions.length > 350) state.actions.splice(0, state.actions.length - 350);
   return action;
+}
+
+function currentAction(entry) {
+  const threadId = entry?.meta?.thread_id;
+  return threadId ? state.currentByThread.get(threadId) : state.current;
 }
 
 function appendOutput(action, text) {
@@ -76,19 +86,20 @@ function processEntry(entry, live = false) {
   if (!entry || typeof entry.message !== "string") return false;
   const raw = stripLoggerPrefix(entry.message);
   const message = raw.trimEnd();
+  const meta = entry.meta || null;
   if (isNoise(message)) return false;
 
   const toolMatch = message.match(/^Calling (.+?) tool$/i);
   if (toolMatch) {
     const tool = toolMatch[1].trim();
-    const action = createAction(entry.ts, kindForTool(tool), prettyTool(tool), tool);
+    const action = createAction(entry.ts, kindForTool(tool), prettyTool(tool), tool, meta);
     action.live = live;
     return true;
   }
 
   if (message.startsWith("$ ")) {
-    let action = state.current;
-    if (!action || action.kind !== "shell") action = createAction(entry.ts, "shell", "Shell command", "execute bash");
+    let action = currentAction(entry);
+    if (!action || action.kind !== "shell") action = createAction(entry.ts, "shell", "Shell command", "execute bash", meta);
     action.ts = entry.ts;
     action.title = message.slice(2).trim();
     action.live ||= live;
@@ -97,8 +108,8 @@ function processEntry(entry, live = false) {
 
   const fileWritten = message.match(/^File written to (.+)$/);
   if (fileWritten) {
-    let action = state.current;
-    if (!action || action.kind !== "file") action = createAction(entry.ts, "file", "File write", "file writing");
+    let action = currentAction(entry);
+    if (!action || action.kind !== "file") action = createAction(entry.ts, "file", "File write", "file writing", meta);
     action.title = `Wrote ${fileWritten[1]}`;
     action.cwd = fileWritten[1];
     action.live ||= live;
@@ -106,34 +117,35 @@ function processEntry(entry, live = false) {
   }
 
   const fileRead = message.match(/^(?:Reading|Read) (?:file|image)s?(?: from)?:?\s+(.+)$/i);
-  if (fileRead && state.current) {
-    state.current.title = `${state.current.tool.toLowerCase().includes("image") ? "Read image" : "Read"} ${fileRead[1]}`;
-    state.current.cwd = fileRead[1];
-    state.current.live ||= live;
+  const current = currentAction(entry);
+  if (fileRead && current) {
+    current.title = `${current.tool.toLowerCase().includes("image") ? "Read image" : "Read"} ${fileRead[1]}`;
+    current.cwd = fileRead[1];
+    current.live ||= live;
     return true;
   }
 
-  if (message.startsWith("cwd = ") && state.current) {
-    state.current.cwd = message.slice(6).trim();
-    state.current.live ||= live;
+  if (message.startsWith("cwd = ") && current) {
+    current.cwd = message.slice(6).trim();
+    current.live ||= live;
     return true;
   }
 
-  if (message.startsWith("status = ") && state.current) {
-    state.current.status = message.slice(9).trim();
-    state.current.live ||= live;
+  if (message.startsWith("status = ") && current) {
+    current.status = message.slice(9).trim();
+    current.live ||= live;
     return true;
   }
 
-  if (message === "Success" && state.current) {
-    state.current.status = "success";
-    state.current.live ||= live;
+  if (message === "Success" && current) {
+    current.status = "success";
+    current.live ||= live;
     return true;
   }
 
-  if (state.current) {
-    appendOutput(state.current, message);
-    state.current.live ||= live;
+  if (current) {
+    appendOutput(current, message);
+    current.live ||= live;
     return true;
   }
 
@@ -172,63 +184,138 @@ function visibleActions() {
     .filter((action) => state.filter === "all" || action.kind === state.filter)
     .filter((action) => {
       if (!needle) return true;
-      return `${action.title}\n${action.cwd}\n${action.output}\n${action.tool}`.toLowerCase().includes(needle);
+      return `${action.task}\n${action.title}\n${action.workspace}\n${action.cwd}\n${action.output}\n${action.tool}`.toLowerCase().includes(needle);
     })
     .sort((a, b) => b.ts - a.ts);
+}
+
+function formatDuration(seconds) {
+  const value = Math.max(0, Math.round(seconds));
+  if (value < 60) return `${value}s`;
+  if (value < 3600) return `${Math.floor(value / 60)}m`;
+  const hours = Math.floor(value / 3600);
+  const minutes = Math.floor((value % 3600) / 60);
+  return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
+}
+
+function groupActions(actions) {
+  const groups = new Map();
+  for (const action of actions) {
+    const workspace = action.workspace || action.cwd || "";
+    const inferred = !action.task;
+    const key = inferred
+      ? `legacy:${basename(workspace)}:${Math.floor(action.ts / 900)}`
+      : `${action.threadId || "thread"}:${action.task}`;
+    let group = groups.get(key);
+    if (!group) {
+      group = {
+        key,
+        title: action.task || `Inferred · ${basename(workspace)}`,
+        inferred,
+        workspace,
+        threadId: action.threadId,
+        newest: action.ts,
+        oldest: action.ts,
+        actions: [],
+      };
+      groups.set(key, group);
+    }
+    group.actions.push(action);
+    group.newest = Math.max(group.newest, action.ts);
+    group.oldest = Math.min(group.oldest, action.ts);
+    if (!group.workspace && workspace) group.workspace = workspace;
+  }
+  return [...groups.values()].sort((a, b) => b.newest - a.newest);
+}
+
+function renderAction(action) {
+  const node = template.content.firstElementChild.cloneNode(true);
+  node.dataset.id = action.id;
+  node.classList.add(action.kind);
+  if (action.live) node.classList.add("fresh");
+  if (/error|failed|failure/i.test(action.status)) node.classList.add("error");
+
+  node.querySelector(".action-icon").textContent = iconFor(action.kind);
+  node.querySelector(".action-kind").textContent = action.tool || action.kind;
+  node.querySelector(".action-time").textContent = formatTime(action.ts);
+  node.querySelector(".action-title").textContent = action.title;
+
+  const context = [];
+  if (action.cwd && action.cwd !== action.workspace) context.push(action.cwd);
+  if (action.status && action.status !== "success") context.push(action.status);
+  node.querySelector(".action-context").textContent = context.join("  ·  ");
+
+  const output = action.output.trim();
+  const pre = node.querySelector(".action-output");
+  const code = pre.querySelector("code");
+  const expand = node.querySelector(".expand-button");
+  if (output) {
+    code.textContent = output;
+    if (output.split("\n").length > 6 || output.length > 650) {
+      pre.classList.add("collapsed");
+      expand.classList.remove("hidden");
+      expand.addEventListener("click", () => {
+        const expanded = pre.classList.toggle("expanded");
+        pre.classList.toggle("collapsed", !expanded);
+        expand.textContent = expanded ? "Hide output" : "Show output";
+      });
+    }
+  } else {
+    pre.remove();
+    expand.remove();
+  }
+
+  if (action.live) node.querySelector(".action-live").classList.remove("hidden");
+  return node;
 }
 
 function render() {
   const visible = visibleActions();
   const fragment = document.createDocumentFragment();
 
-  for (const action of visible) {
-    const node = template.content.firstElementChild.cloneNode(true);
-    node.dataset.id = action.id;
-    node.classList.add(action.kind);
-    if (action.live) node.classList.add("fresh");
-    if (/error|failed|failure/i.test(action.status)) node.classList.add("error");
+  for (const group of groupActions(visible)) {
+    const section = document.createElement("section");
+    section.className = `task-group${group.inferred ? " inferred" : ""}`;
 
-    node.querySelector(".action-icon").textContent = iconFor(action.kind);
-    node.querySelector(".action-kind").textContent = action.tool || action.kind;
-    node.querySelector(".action-time").textContent = formatTime(action.ts);
-    node.querySelector(".action-title").textContent = action.title;
+    const header = document.createElement("header");
+    header.className = "task-header";
+    const heading = document.createElement("div");
+    heading.className = "task-heading";
+    const kicker = document.createElement("div");
+    kicker.className = "task-kicker";
+    kicker.textContent = group.inferred ? "INFERRED LEGACY GROUP" : "CHATBOT TASK";
+    const title = document.createElement("div");
+    title.className = "task-title";
+    title.textContent = group.title;
+    const meta = document.createElement("div");
+    meta.className = "task-meta";
+    const details = [];
+    if (group.workspace) details.push(basename(group.workspace));
+    details.push(`${group.actions.length} action${group.actions.length === 1 ? "" : "s"}`);
+    details.push(formatDuration(group.newest - group.oldest));
+    meta.textContent = details.join(" · ");
+    heading.append(kicker, title, meta);
+    header.appendChild(heading);
 
-    const context = [];
-    if (action.cwd) context.push(action.cwd);
-    if (action.status && action.status !== "success") context.push(action.status);
-    node.querySelector(".action-context").textContent = context.join("  ·  ");
-
-    const output = action.output.trim();
-    const pre = node.querySelector(".action-output");
-    const code = pre.querySelector("code");
-    const expand = node.querySelector(".expand-button");
-    if (output) {
-      code.textContent = output;
-      if (output.split("\n").length > 6 || output.length > 650) {
-        pre.classList.add("collapsed");
-        expand.classList.remove("hidden");
-        expand.addEventListener("click", () => {
-          const expanded = pre.classList.toggle("expanded");
-          pre.classList.toggle("collapsed", !expanded);
-          expand.textContent = expanded ? "Hide output" : "Show output";
-        });
-      }
-    } else {
-      pre.remove();
-      expand.remove();
+    if (group.threadId) {
+      const thread = document.createElement("div");
+      thread.className = "task-thread";
+      thread.textContent = group.threadId.slice(0, 10);
+      thread.title = group.threadId;
+      header.appendChild(thread);
     }
+    section.appendChild(header);
 
-    if (action.live) {
-      const badge = node.querySelector(".action-live");
-      badge.classList.remove("hidden");
-    }
-    fragment.appendChild(node);
+    const actions = document.createElement("div");
+    actions.className = "task-actions";
+    for (const action of group.actions.sort((a, b) => b.ts - a.ts)) actions.appendChild(renderAction(action));
+    section.appendChild(actions);
+    fragment.appendChild(section);
   }
 
   timeline.replaceChildren(fragment);
   emptyState.classList.toggle("hidden", visible.length !== 0);
   updateStats();
-
 }
 
 function updateStats() {
@@ -244,13 +331,15 @@ function updateStats() {
 
   if (latest) {
     $("#latestTime").textContent = formatLatest(latest.ts);
-    $("#latestDetail").textContent = latest.title;
-    $("#workspace").textContent = basename(latest.cwd);
-    $("#workspace").title = latest.cwd || "";
+    $("#latestDetail").textContent = latest.task || latest.title;
+    const latestWorkspace = latest.workspace || latest.cwd;
+    $("#workspace").textContent = basename(latestWorkspace);
+    $("#workspace").title = latestWorkspace || "";
   }
 
   const shown = visibleActions().length;
-  $("#streamSubtitle").textContent = `${shown} shown · ${all.length} recent actions`;
+  const taskCount = groupActions(all).filter((group) => !group.inferred).length;
+  $("#streamSubtitle").textContent = `${shown} shown · ${taskCount} task${taskCount === 1 ? "" : "s"} · ${all.length} recent actions`;
 }
 
 function setConnection(mode) {

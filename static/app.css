@@ -163,6 +163,27 @@ kbd { border: 1px solid var(--line-strong); border-bottom-color: rgba(255,255,25
 .clock { color: #596473; font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 .timeline { position: relative; display: block; }
+.task-group {
+  margin-bottom: 18px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+  background: linear-gradient(180deg, rgba(255,255,255,.025), rgba(255,255,255,.009));
+  box-shadow: 0 12px 38px rgba(0,0,0,.14);
+}
+.task-group.inferred { border-style: dashed; opacity: .82; }
+.task-header {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 20px;
+  padding: 15px 17px 13px; border-bottom: 1px solid var(--line);
+  background: rgba(255,255,255,.018);
+}
+.task-heading { min-width: 0; }
+.task-kicker { color: var(--green); font-size: 8px; font-weight: 800; letter-spacing: .15em; }
+.task-group.inferred .task-kicker { color: var(--amber); }
+.task-title { margin-top: 5px; color: #edf1f5; font-size: 14px; font-weight: 670; line-height: 1.35; overflow-wrap: anywhere; }
+.task-meta { margin-top: 5px; color: #657182; font: 9px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.task-thread {
+  flex: 0 0 auto; padding: 4px 7px; border: 1px solid var(--line); border-radius: 6px;
+  color: #697586; background: rgba(0,0,0,.15); font: 8px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.task-actions { padding: 3px 13px 10px; }
 .action-card { position: relative; display: block; min-height: 0 !important; height: auto !important; padding: 9px 0 5px 42px; }
 .rail { position: absolute; left: 0; top: 9px; bottom: 5px; width: 31px; display: flex; align-items: center; flex-direction: column; }
 .action-icon {
@@ -222,6 +243,8 @@ body.compact .action-output { display: none; }
 body.compact .expand-button { display: none !important; }
 body.compact .action-body { padding-top: 10px; padding-bottom: 10px; }
 body.compact .action-card { padding-top: 5px; }
+body.compact .task-header { padding-block: 10px; }
+body.compact .task-meta { display: none; }
 
 @media (max-width: 900px) {
   .shell { display: block; }
@@ -240,6 +263,9 @@ body.compact .action-card { padding-top: 5px; }
   .workspace-card { display: none; }
   .topbar { margin-bottom: 22px; }
   .topbar p { max-width: 260px; }
+  .task-header { padding-inline: 12px; }
+  .task-thread { display: none; }
+  .task-actions { padding-inline: 8px; }
   .action-card { padding-left: 33px; }
   .rail { width: 25px; }
   .action-icon { width: 24px; height: 24px; }
