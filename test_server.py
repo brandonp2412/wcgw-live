@@ -60,6 +60,16 @@ class StreamTests(unittest.TestCase):
         self.assertEqual(handler.wfile.writes, 2)
 
 
+class ServerTests(unittest.TestCase):
+    def test_request_threads_do_not_block_shutdown(self):
+        with patch.object(server, "HOST", "127.0.0.1"), patch.object(server, "PORT", 0):
+            httpd = server.create_server()
+        try:
+            self.assertTrue(httpd.daemon_threads)
+        finally:
+            httpd.server_close()
+
+
 class ParseTests(unittest.TestCase):
     def test_structured_wcgw_event_keeps_metadata_and_message(self):
         raw = {

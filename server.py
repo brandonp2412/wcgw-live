@@ -184,9 +184,6 @@ class Handler(BaseHTTPRequestHandler):
                     [proc.stdout], [], [], SSE_HEARTBEAT_SECONDS
                 )
                 if not ready:
-                    # A quiet journal previously left this handler blocked forever after
-                    # the browser disconnected. Heartbeats make the next socket write
-                    # detect the disconnect and let the journalctl child be reaped.
                     self.wfile.write(b": keepalive\n\n")
                     self.wfile.flush()
                     continue
@@ -213,8 +210,14 @@ class Handler(BaseHTTPRequestHandler):
                 proc.wait(timeout=1)
 
 
-def main() -> None:
+def create_server() -> ThreadingHTTPServer:
     server = ThreadingHTTPServer((HOST, PORT), Handler)
+    server.daemon_threads = True
+    return server
+
+
+def main() -> None:
+    server = create_server()
     print(f"wcgw-live: http://{HOST}:{PORT} <- {UNIT}", flush=True)
     try:
         server.serve_forever(poll_interval=0.25)
