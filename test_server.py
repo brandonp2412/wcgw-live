@@ -61,6 +61,16 @@ class StreamTests(unittest.TestCase):
 
 
 class ServerTests(unittest.TestCase):
+    @patch("server.subprocess.run", side_effect=server.subprocess.TimeoutExpired("journalctl", 5))
+    def test_history_timeout_returns_empty_history(self, run):
+        self.assertEqual(server.get_history(100), [])
+        self.assertEqual(run.call_args.kwargs["timeout"], server.COMMAND_TIMEOUT_SECONDS)
+
+    @patch("server.subprocess.run", side_effect=server.subprocess.TimeoutExpired("systemctl", 5))
+    def test_status_timeout_returns_unknown(self, run):
+        self.assertEqual(server.service_state(), "unknown")
+        self.assertEqual(run.call_args.kwargs["timeout"], server.COMMAND_TIMEOUT_SECONDS)
+
     def test_request_threads_do_not_block_shutdown(self):
         with patch.object(server, "HOST", "127.0.0.1"), patch.object(server, "PORT", 0):
             httpd = server.create_server()
@@ -71,6 +81,10 @@ class ServerTests(unittest.TestCase):
 
 
 class ParseTests(unittest.TestCase):
+    def test_non_object_json_is_ignored(self):
+        self.assertIsNone(server.parse_journal_line("[]"))
+        self.assertIsNone(server.parse_journal_line('"message"'))
+
     def test_structured_wcgw_event_keeps_metadata_and_message(self):
         raw = {
             "MESSAGE": 'prefix WCGW_EVENT {"event":"log","message":"hello","thread_id":"abc"}',

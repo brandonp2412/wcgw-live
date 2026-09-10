@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "static"
 STARTED_AT = time.time()
 SSE_HEARTBEAT_SECONDS = 15.0
+COMMAND_TIMEOUT_SECONDS = 5.0
 
 
 def journal_args(*extra: str) -> list[str]:
@@ -28,6 +29,8 @@ def parse_journal_line(line: str) -> dict | None:
     try:
         raw = json.loads(line)
     except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(raw, dict):
         return None
 
     message = raw.get("MESSAGE", "")
@@ -65,13 +68,17 @@ def parse_journal_line(line: str) -> dict | None:
 
 
 def get_history(lines: int) -> list[dict]:
-    proc = subprocess.run(
-        journal_args("-n", str(lines)),
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
+    try:
+        proc = subprocess.run(
+            journal_args("-n", str(lines)),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=COMMAND_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
     entries: list[dict] = []
     for line in proc.stdout.splitlines():
         parsed = parse_journal_line(line)
@@ -82,13 +89,17 @@ def get_history(lines: int) -> list[dict]:
 
 
 def service_state() -> str:
-    proc = subprocess.run(
-        ["systemctl", "--user", "is-active", UNIT],
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
+    try:
+        proc = subprocess.run(
+            ["systemctl", "--user", "is-active", UNIT],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=COMMAND_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "unknown"
     return proc.stdout.strip() or "unknown"
 
 
