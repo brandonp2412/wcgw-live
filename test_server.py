@@ -110,6 +110,7 @@ class ParseTests(unittest.TestCase):
         raw = {
             "MESSAGE": 'prefix WCGW_EVENT {"event":"log","message":"hello","thread_id":"abc"}',
             "__REALTIME_TIMESTAMP": "1000000",
+            "__CURSOR": "s=cursor-1",
         }
 
         entry = server.parse_journal_line(json.dumps(raw))
@@ -118,6 +119,7 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(entry["message"], "hello")
         self.assertEqual(entry["meta"]["thread_id"], "abc")
         self.assertEqual(entry["ts"], 1.0)
+        self.assertEqual(entry["cursor"], "s=cursor-1")
 
 
 if __name__ == "__main__":

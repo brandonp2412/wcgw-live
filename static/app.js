@@ -11,6 +11,10 @@ const state = {
   queue: [],
   connected: false,
   compact: false,
+  bootstrapping: true,
+  bootstrapQueue: [],
+  seenCursors: new Set(),
+  cursorOrder: [],
 };
 
 const timeline = $("#timeline");
@@ -92,8 +96,21 @@ function appendOutput(action, text) {
   if (action.output.length > 28000) action.output = `… older output trimmed …\n${action.output.slice(-26000)}`;
 }
 
+function rememberEntry(entry) {
+  const cursor = typeof entry?.cursor === "string" ? entry.cursor : "";
+  if (!cursor) return true;
+  if (state.seenCursors.has(cursor)) return false;
+  state.seenCursors.add(cursor);
+  state.cursorOrder.push(cursor);
+  if (state.cursorOrder.length > 5000) {
+    state.seenCursors.delete(state.cursorOrder.shift());
+  }
+  return true;
+}
+
 function processEntry(entry, live = false) {
   if (!entry || typeof entry.message !== "string") return false;
+  if (!rememberEntry(entry)) return false;
   const raw = stripLoggerPrefix(entry.message);
   const message = raw.trimEnd();
   const meta = entry.meta || null;
@@ -366,7 +383,6 @@ async function loadHistory() {
   const data = await response.json();
   $("#sourceUnit").textContent = data.unit;
   for (const entry of data.entries) processEntry(entry, false);
-  render();
 }
 
 function startStream() {
@@ -376,6 +392,11 @@ function startStream() {
   source.onmessage = (event) => {
     let entry;
     try { entry = JSON.parse(event.data); } catch { return; }
+    if (state.bootstrapping) {
+      state.bootstrapQueue.push(entry);
+      if (state.bootstrapQueue.length > 5000) state.bootstrapQueue.shift();
+      return;
+    }
     if (state.paused) {
       state.queue.push(entry);
       if (state.queue.length > 1000) state.queue.shift();
@@ -446,12 +467,23 @@ setInterval(() => {
 setInterval(refreshStatus, 15000);
 
 (async () => {
+  const snapshot = new URLSearchParams(location.search).has("snapshot");
+  if (!snapshot) startStream();
   try {
     await Promise.all([loadHistory(), refreshStatus()]);
   } catch (error) {
     console.error(error);
     $("#streamSubtitle").textContent = "failed to load history";
+  } finally {
+    state.bootstrapping = false;
+    const queued = state.bootstrapQueue.splice(0);
+    if (state.paused) {
+      state.queue.push(...queued);
+      if (state.queue.length > 1000) state.queue.splice(0, state.queue.length - 1000);
+    } else {
+      for (const entry of queued) processEntry(entry, true);
+    }
+    render();
   }
-  if (!new URLSearchParams(location.search).has("snapshot")) startStream();
-  else setConnection("paused");
+  if (snapshot) setConnection("paused");
 })();

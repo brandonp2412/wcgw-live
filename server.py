@@ -63,6 +63,9 @@ def parse_journal_line(line: str) -> dict | None:
         "pid": raw.get("_PID"),
         "identifier": raw.get("SYSLOG_IDENTIFIER") or raw.get("_COMM") or "wcgw",
     }
+    cursor = raw.get("__CURSOR")
+    if isinstance(cursor, str) and cursor:
+        entry["cursor"] = cursor
     if meta is not None:
         entry["meta"] = meta
     return entry
