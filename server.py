@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import select
 import subprocess
 import time
 from http import HTTPStatus
@@ -16,6 +17,7 @@ UNIT = os.environ.get("WCGW_LIVE_UNIT", "wcgw.service")
 ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "static"
 STARTED_AT = time.time()
+SSE_HEARTBEAT_SECONDS = 15.0
 
 
 def journal_args(*extra: str) -> list[str]:
@@ -177,7 +179,23 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(b": wcgw-live connected\n\n")
             self.wfile.flush()
             assert proc.stdout is not None
-            for line in proc.stdout:
+            while True:
+                ready, _, _ = select.select(
+                    [proc.stdout], [], [], SSE_HEARTBEAT_SECONDS
+                )
+                if not ready:
+                    # A quiet journal previously left this handler blocked forever after
+                    # the browser disconnected. Heartbeats make the next socket write
+                    # detect the disconnect and let the journalctl child be reaped.
+                    self.wfile.write(b": keepalive\n\n")
+                    self.wfile.flush()
+                    continue
+
+                line = proc.stdout.readline()
+                if not line:
+                    if proc.poll() is not None:
+                        break
+                    continue
                 parsed = parse_journal_line(line)
                 if not parsed:
                     continue
@@ -192,6 +210,7 @@ class Handler(BaseHTTPRequestHandler):
                 proc.wait(timeout=1)
             except subprocess.TimeoutExpired:
                 proc.kill()
+                proc.wait(timeout=1)
 
 
 def main() -> None:
