@@ -52,7 +52,8 @@ def parse_journal_line(line: str) -> dict | None:
             pass
 
     try:
-        timestamp = int(raw.get("__REALTIME_TIMESTAMP", "0")) / 1_000_000
+        raw_timestamp = int(raw.get("__REALTIME_TIMESTAMP", "0"))
+        timestamp = raw_timestamp / 1_000_000 if raw_timestamp > 0 else time.time()
     except (TypeError, ValueError):
         timestamp = time.time()
 

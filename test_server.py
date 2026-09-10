@@ -85,6 +85,14 @@ class ParseTests(unittest.TestCase):
         self.assertIsNone(server.parse_journal_line("[]"))
         self.assertIsNone(server.parse_journal_line('"message"'))
 
+    @patch("server.time.time", return_value=1234.5)
+    def test_missing_or_nonpositive_timestamp_uses_current_time(self, _time):
+        self.assertEqual(server.parse_journal_line('{"MESSAGE":"missing"}')["ts"], 1234.5)
+        self.assertEqual(
+            server.parse_journal_line('{"MESSAGE":"zero","__REALTIME_TIMESTAMP":"0"}')["ts"],
+            1234.5,
+        )
+
     def test_structured_wcgw_event_keeps_metadata_and_message(self):
         raw = {
             "MESSAGE": 'prefix WCGW_EVENT {"event":"log","message":"hello","thread_id":"abc"}',
