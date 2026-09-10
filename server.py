@@ -173,21 +173,25 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(HTTPStatus.NOT_FOUND)
 
     def stream_journal(self) -> None:
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-cache, no-transform")
-        self.send_header("Connection", "keep-alive")
-        self.send_header("X-Accel-Buffering", "no")
-        self.end_headers()
-
-        proc = subprocess.Popen(
-            journal_args("-n", "0", "-f"),
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            bufsize=1,
-        )
         try:
+            proc = subprocess.Popen(
+                journal_args("-n", "0", "-f"),
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                bufsize=1,
+            )
+        except OSError:
+            self.send_error(HTTPStatus.SERVICE_UNAVAILABLE, "journalctl unavailable")
+            return
+
+        try:
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache, no-transform")
+            self.send_header("Connection", "keep-alive")
+            self.send_header("X-Accel-Buffering", "no")
+            self.end_headers()
             self.wfile.write(b": wcgw-live connected\n\n")
             self.wfile.flush()
             assert proc.stdout is not None

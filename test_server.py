@@ -40,6 +40,19 @@ class DisconnectingWriter:
 
 
 class StreamTests(unittest.TestCase):
+    @patch("server.subprocess.Popen", side_effect=OSError("journalctl missing"))
+    def test_stream_spawn_failure_returns_service_unavailable(self, _popen):
+        handler = object.__new__(server.Handler)
+        errors = []
+        handler.send_error = lambda status, message=None: errors.append((status, message))
+        handler.send_response = lambda *_args, **_kwargs: None
+        handler.send_header = lambda *_args, **_kwargs: None
+        handler.end_headers = lambda: None
+
+        handler.stream_journal()
+
+        self.assertEqual(errors, [(503, "journalctl unavailable")])
+
     @patch("server.select.select", return_value=([], [], []))
     @patch("server.subprocess.Popen")
     def test_idle_disconnect_reaps_journalctl(self, popen, _select):
