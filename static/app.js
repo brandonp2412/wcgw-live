@@ -67,7 +67,17 @@ function createAction(ts, kind, title, tool = "", meta = null) {
   state.actions.push(action);
   state.current = action;
   if (action.threadId) state.currentByThread.set(action.threadId, action);
-  if (state.actions.length > 350) state.actions.splice(0, state.actions.length - 350);
+  if (state.actions.length > 350) {
+    const removed = state.actions.splice(0, state.actions.length - 350);
+    for (const oldAction of removed) {
+      if (
+        oldAction.threadId &&
+        state.currentByThread.get(oldAction.threadId) === oldAction
+      ) {
+        state.currentByThread.delete(oldAction.threadId);
+      }
+    }
+  }
   return action;
 }
 
