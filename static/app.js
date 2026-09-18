@@ -255,11 +255,10 @@ function groupActions(actions) {
   return [...groups.values()].sort((a, b) => b.newest - a.newest);
 }
 
-function renderAction(action) {
-  const node = template.content.firstElementChild.cloneNode(true);
+function updateActionNode(node, action, fresh = false) {
   node.dataset.id = action.id;
-  node.classList.add(action.kind);
-  if (action.live) node.classList.add("fresh");
+  node.className = `action-card ${action.kind}`;
+  if (fresh) node.classList.add("fresh");
   if (/error|failed|failure/i.test(action.status)) node.classList.add("error");
 
   node.querySelector(".action-icon").textContent = iconFor(action.kind);
@@ -276,73 +275,128 @@ function renderAction(action) {
   const pre = node.querySelector(".action-output");
   const code = pre.querySelector("code");
   const expand = node.querySelector(".expand-button");
-  if (output) {
-    code.textContent = output;
-    if (output.split("\n").length > 6 || output.length > 650) {
-      pre.classList.add("collapsed");
-      expand.classList.remove("hidden");
-      expand.addEventListener("click", () => {
-        const expanded = pre.classList.toggle("expanded");
-        pre.classList.toggle("collapsed", !expanded);
-        expand.textContent = expanded ? "Hide output" : "Show output";
-      });
-    }
-  } else {
-    pre.remove();
-    expand.remove();
-  }
+  const longOutput = output.split("\n").length > 6 || output.length > 650;
+  const expanded = pre.classList.contains("expanded");
 
-  if (action.live) node.querySelector(".action-live").classList.remove("hidden");
+  code.textContent = output;
+  pre.classList.toggle("hidden", !output);
+  pre.classList.toggle("expanded", Boolean(output && longOutput && expanded));
+  pre.classList.toggle("collapsed", Boolean(output && longOutput && !expanded));
+  expand.classList.toggle("hidden", !output || !longOutput);
+  expand.textContent = expanded ? "Hide output" : "Show output";
+
+  node.querySelector(".action-live").classList.toggle("hidden", !action.live);
+}
+
+function renderAction(action, fresh = action.live) {
+  const node = template.content.firstElementChild.cloneNode(true);
+  const pre = node.querySelector(".action-output");
+  const expand = node.querySelector(".expand-button");
+  expand.addEventListener("click", () => {
+    const expanded = pre.classList.toggle("expanded");
+    pre.classList.toggle("collapsed", !expanded);
+    expand.textContent = expanded ? "Hide output" : "Show output";
+  });
+  updateActionNode(node, action, fresh);
   return node;
 }
 
-function render() {
-  const visible = visibleActions();
-  const fragment = document.createDocumentFragment();
+function createGroupNode(group) {
+  const section = document.createElement("section");
+  section.dataset.groupKey = group.key;
 
-  for (const group of groupActions(visible)) {
-    const section = document.createElement("section");
-    section.className = `task-group${group.inferred ? " inferred" : ""}`;
+  const header = document.createElement("header");
+  header.className = "task-header";
+  const heading = document.createElement("div");
+  heading.className = "task-heading";
+  const kicker = document.createElement("div");
+  kicker.className = "task-kicker";
+  const title = document.createElement("div");
+  title.className = "task-title";
+  const meta = document.createElement("div");
+  meta.className = "task-meta";
+  heading.append(kicker, title, meta);
+  header.appendChild(heading);
+  section.appendChild(header);
 
-    const header = document.createElement("header");
-    header.className = "task-header";
-    const heading = document.createElement("div");
-    heading.className = "task-heading";
-    const kicker = document.createElement("div");
-    kicker.className = "task-kicker";
-    kicker.textContent = group.inferred ? "INFERRED LEGACY GROUP" : "CHATBOT TASK";
-    const title = document.createElement("div");
-    title.className = "task-title";
-    title.textContent = group.title;
-    const meta = document.createElement("div");
-    meta.className = "task-meta";
-    const details = [];
-    if (group.workspace) details.push(basename(group.workspace));
-    details.push(`${group.actions.length} action${group.actions.length === 1 ? "" : "s"}`);
-    details.push(formatDuration(group.newest - group.oldest));
-    meta.textContent = details.join(" · ");
-    heading.append(kicker, title, meta);
-    header.appendChild(heading);
+  const actions = document.createElement("div");
+  actions.className = "task-actions";
+  section.appendChild(actions);
+  return section;
+}
 
-    if (group.threadId) {
-      const thread = document.createElement("div");
+function updateGroupNode(section, group, animateNewActions = false) {
+  section.className = `task-group${group.inferred ? " inferred" : ""}`;
+  section.dataset.groupKey = group.key;
+  section.querySelector(".task-kicker").textContent = group.inferred ? "INFERRED LEGACY GROUP" : "CHATBOT TASK";
+  section.querySelector(".task-title").textContent = group.title;
+
+  const details = [];
+  if (group.workspace) details.push(basename(group.workspace));
+  details.push(`${group.actions.length} action${group.actions.length === 1 ? "" : "s"}`);
+  details.push(formatDuration(group.newest - group.oldest));
+  section.querySelector(".task-meta").textContent = details.join(" · ");
+
+  const header = section.querySelector(".task-header");
+  let thread = header.querySelector(".task-thread");
+  if (group.threadId) {
+    if (!thread) {
+      thread = document.createElement("div");
       thread.className = "task-thread";
-      thread.textContent = group.threadId.slice(0, 10);
-      thread.title = group.threadId;
       header.appendChild(thread);
     }
-    section.appendChild(header);
-
-    const actions = document.createElement("div");
-    actions.className = "task-actions";
-    for (const action of group.actions.sort((a, b) => b.ts - a.ts)) actions.appendChild(renderAction(action));
-    section.appendChild(actions);
-    fragment.appendChild(section);
+    thread.textContent = group.threadId.slice(0, 10);
+    thread.title = group.threadId;
+  } else if (thread) {
+    thread.remove();
   }
 
-  timeline.replaceChildren(fragment);
+  const actions = section.querySelector(".task-actions");
+  const existing = new Map([...actions.children].map((node) => [node.dataset.id, node]));
+  const desired = [...group.actions].sort((a, b) => b.ts - a.ts);
+
+  desired.forEach((action, index) => {
+    let node = existing.get(action.id);
+    if (node) {
+      updateActionNode(node, action, false);
+      existing.delete(action.id);
+    } else {
+      node = renderAction(action, animateNewActions && action.live);
+    }
+
+    const current = actions.children[index];
+    if (current !== node) actions.insertBefore(node, current || null);
+  });
+
+  for (const node of existing.values()) node.remove();
+}
+
+function reconcileTimeline(animateNewActions = false) {
+  const visible = visibleActions();
+  const groups = groupActions(visible);
+  const existing = new Map([...timeline.children].map((node) => [node.dataset.groupKey, node]));
+
+  groups.forEach((group, index) => {
+    let section = existing.get(group.key);
+    if (section) {
+      existing.delete(group.key);
+    } else {
+      section = createGroupNode(group);
+    }
+
+    updateGroupNode(section, group, animateNewActions);
+    const current = timeline.children[index];
+    if (current !== section) timeline.insertBefore(section, current || null);
+  });
+
+  for (const section of existing.values()) section.remove();
+
   emptyState.classList.toggle("hidden", visible.length !== 0);
   updateStats();
+}
+
+function render() {
+  reconcileTimeline(false);
 }
 
 function updateStats() {
@@ -402,7 +456,7 @@ function startStream() {
       if (state.queue.length > 1000) state.queue.shift();
       return;
     }
-    if (processEntry(entry, true)) render();
+    if (processEntry(entry, true)) reconcileTimeline(true);
   };
 }
 
