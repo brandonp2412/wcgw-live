@@ -116,6 +116,44 @@ function processEntry(entry, live = false) {
   const meta = entry.meta || null;
   if (isNoise(message)) return false;
 
+  const pythonEventMarker = "MCP_PYTHON_EVENT ";
+  const pythonEventIndex = message.indexOf(pythonEventMarker);
+  if (pythonEventIndex >= 0) {
+    let payload;
+    try {
+      payload = JSON.parse(message.slice(pythonEventIndex + pythonEventMarker.length));
+    } catch {
+      return false;
+    }
+    if (!payload || typeof payload !== "object") return false;
+
+    const cwd = typeof payload.cwd === "string" ? payload.cwd : "";
+    const action = createAction(
+      entry.ts,
+      "tool",
+      "Python execution",
+      "python",
+      cwd ? { cwd, workspace: cwd } : null,
+    );
+    action.live = live;
+    action.status = payload.ok === true
+      ? "success"
+      : (payload.failure_kind || (Number.isFinite(payload.returncode) ? "exit " + payload.returncode : "failed"));
+
+    const details = [];
+    if (Number.isFinite(payload.duration_ms)) details.push(String(payload.duration_ms) + " ms");
+    if (Number.isFinite(payload.returncode)) details.push("exit " + payload.returncode);
+    if (Number.isFinite(payload.stdout_chars) && payload.stdout_chars > 0) {
+      details.push(String(payload.stdout_chars) + " stdout chars");
+    }
+    if (Number.isFinite(payload.stderr_chars) && payload.stderr_chars > 0) {
+      details.push(String(payload.stderr_chars) + " stderr chars");
+    }
+    if (payload.timed_out === true) details.push("timed out");
+    appendOutput(action, details.join(" · "));
+    return true;
+  }
+
   const toolMatch = message.match(/^Calling (.+?) tool$/i);
   if (toolMatch) {
     const tool = toolMatch[1].trim();
