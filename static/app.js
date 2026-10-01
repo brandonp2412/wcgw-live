@@ -62,7 +62,7 @@ function createAction(ts, kind, title, tool = "", meta = null) {
     tool,
     output: "",
     cwd: meta?.cwd || "",
-    workspace: meta?.workspace || "",
+    workspace: meta?.workspace || meta?.cwd || "",
     task: meta?.task || "",
     threadId: meta?.thread_id || "",
     status: "",
