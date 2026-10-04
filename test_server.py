@@ -1,3 +1,4 @@
+import io
 import json
 import unittest
 from unittest.mock import patch
@@ -26,6 +27,15 @@ class FakeProcess:
         return None
 
 
+class JournalProcess(FakeProcess):
+    def __init__(self, line):
+        super().__init__()
+        self.stdout = io.StringIO(line)
+
+    def poll(self):
+        return 0 if self.stdout.tell() == len(self.stdout.getvalue()) else None
+
+
 class DisconnectingWriter:
     def __init__(self):
         self.writes = 0
@@ -43,6 +53,7 @@ class StreamTests(unittest.TestCase):
     @patch("server.subprocess.Popen", side_effect=OSError("journalctl missing"))
     def test_stream_spawn_failure_returns_service_unavailable(self, _popen):
         handler = object.__new__(server.Handler)
+        handler.headers = {}
         errors = []
         handler.send_error = lambda status, message=None: errors.append((status, message))
         handler.send_response = lambda *_args, **_kwargs: None
@@ -60,6 +71,7 @@ class StreamTests(unittest.TestCase):
         popen.return_value = process
 
         handler = object.__new__(server.Handler)
+        handler.headers = {}
         handler.send_response = lambda *_args, **_kwargs: None
         handler.send_header = lambda *_args, **_kwargs: None
         handler.end_headers = lambda: None
@@ -71,6 +83,51 @@ class StreamTests(unittest.TestCase):
         self.assertTrue(process.waited)
         self.assertFalse(process.killed)
         self.assertEqual(handler.wfile.writes, 2)
+
+    @patch("server.select.select", return_value=([], [], []))
+    @patch("server.subprocess.Popen")
+    def test_reconnect_resumes_after_last_event_cursor(self, popen, _select):
+        process = FakeProcess()
+        popen.return_value = process
+
+        handler = object.__new__(server.Handler)
+        handler.headers = {"Last-Event-ID": "s=cursor-1"}
+        handler.send_response = lambda *_args, **_kwargs: None
+        handler.send_header = lambda *_args, **_kwargs: None
+        handler.end_headers = lambda: None
+        handler.wfile = DisconnectingWriter()
+
+        handler.stream_journal()
+
+        command = popen.call_args.args[0]
+        self.assertIn("--after-cursor", command)
+        cursor_index = command.index("--after-cursor")
+        self.assertEqual(command[cursor_index + 1], "s=cursor-1")
+        self.assertNotIn("-n", command)
+
+    @patch("server.select.select", side_effect=lambda readers, *_args: (readers, [], []))
+    @patch("server.subprocess.Popen")
+    def test_stream_sends_journal_cursor_as_sse_event_id(self, popen, _select):
+        raw = {
+            "MESSAGE": "Calling execute bash tool",
+            "__REALTIME_TIMESTAMP": "1000000",
+            "__CURSOR": "s=cursor-2",
+        }
+        process = JournalProcess(json.dumps(raw) + "\n")
+        popen.return_value = process
+
+        handler = object.__new__(server.Handler)
+        handler.headers = {}
+        handler.send_response = lambda *_args, **_kwargs: None
+        handler.send_header = lambda *_args, **_kwargs: None
+        handler.end_headers = lambda: None
+        handler.wfile = io.BytesIO()
+
+        handler.stream_journal()
+
+        output = handler.wfile.getvalue()
+        self.assertIn(b"id: s=cursor-2\n", output)
+        self.assertIn(b"data: ", output)
 
 
 class ServerTests(unittest.TestCase):

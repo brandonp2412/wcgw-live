@@ -176,9 +176,15 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(HTTPStatus.NOT_FOUND)
 
     def stream_journal(self) -> None:
+        last_event_id = self.headers.get("Last-Event-ID", "").strip()
+        stream_args = (
+            journal_args("--after-cursor", last_event_id, "-f")
+            if last_event_id
+            else journal_args("-n", "0", "-f")
+        )
         try:
             proc = subprocess.Popen(
-                journal_args("-n", "0", "-f"),
+                stream_args,
                 text=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
@@ -216,6 +222,9 @@ class Handler(BaseHTTPRequestHandler):
                 if not parsed:
                     continue
                 payload = json.dumps(parsed, separators=(",", ":")).encode()
+                cursor = parsed.get("cursor")
+                if cursor:
+                    self.wfile.write(b"id: " + cursor.encode() + b"\n")
                 self.wfile.write(b"data: " + payload + b"\n\n")
                 self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError):
